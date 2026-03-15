@@ -1,0 +1,23 @@
+# raw data
+data_raw/**
+
+# large raster / vector / archives
+*.tif
+*.tif.aux.xml
+*.tfw
+*.ovr
+*.grib
+*.zip
+*.shp
+*.shx
+*.dbf
+*.gpkg
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# system
+.DS_Store
+Thumbs.db
