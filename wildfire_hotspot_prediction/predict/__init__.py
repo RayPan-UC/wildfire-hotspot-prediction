@@ -1,0 +1,1 @@
+from wildfire_hotspot_prediction.predict.predict import predict
