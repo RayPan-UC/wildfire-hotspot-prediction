@@ -25,8 +25,9 @@ fort_mcmurray_2016/
 
 # project files
 PIPELINE.md
-pyproject.toml
-tests/
+
+# credentials — never commit real keys
+tests/.env
 
 # system
 .DS_Store
