@@ -61,6 +61,7 @@ from wildfire_hotspot_prediction.predict.predict import predict
 from wildfire_hotspot_prediction.export.render import export_render
 
 from wildfire_hotspot_prediction.build_prediction_data import WildfirePredictor
+from wildfire_hotspot_prediction.build_prediction_data.feature_builder import build_prediction_features
 
 from wildfire_hotspot_prediction.pipeline import run_pipeline
 
@@ -75,5 +76,6 @@ __all__ = [
     "train", "predict", "evaluate",
     "export_render",
     "WildfirePredictor",
+    "build_prediction_features",
     "run_pipeline",
 ]
