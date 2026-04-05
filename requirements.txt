@@ -1,0 +1,18 @@
+numpy
+pandas
+geopandas
+shapely
+pyproj
+rasterio
+scipy
+scikit-learn
+requests
+h5py
+tqdm
+cdsapi
+xarray
+netCDF4
+
+# dev
+pytest
+python-dotenv

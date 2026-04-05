@@ -7,6 +7,7 @@ data_raw/**
 *.tfw
 *.ovr
 *.grib
+*.nc
 *.zip
 *.shp
 *.shx
@@ -16,7 +17,13 @@ data_raw/**
 # python
 __pycache__/
 *.pyc
+*.egg-info/
 .venv/
+
+# project files
+PIPELINE.md
+pyproject.toml
+tests/
 
 # system
 .DS_Store

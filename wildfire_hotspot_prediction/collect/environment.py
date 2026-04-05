@@ -103,7 +103,7 @@ def _collect_era5(study: Study, cds_key: str = None) -> Path:
     """
     import cdsapi
 
-    out_path = study.weather_raw_dir / "era5.grib"
+    out_path = study.weather_raw_dir / "era5.nc"
     if out_path.exists():
         print(f"[era5] already exists, skipping → {out_path}")
         return out_path
@@ -157,7 +157,7 @@ def _collect_era5(study: Study, cds_key: str = None) -> Path:
         import shutil
         parts = []
         for (yr, mo), days in months_days.items():
-            part_path = study.weather_raw_dir / f"era5_{yr}_{mo:02d}.grib"
+            part_path = study.weather_raw_dir / f"era5_{yr}_{mo:02d}.nc"
             if not part_path.exists():
                 request = {
                     "variable":        _ERA5_VARIABLES,
@@ -165,7 +165,7 @@ def _collect_era5(study: Study, cds_key: str = None) -> Path:
                     "month":           f"{mo:02d}",
                     "day":             days,
                     "time":            [f"{h:02d}:00" for h in range(24)],
-                    "data_format":     "grib",
+                    "data_format":     "netcdf",
                     "download_format": "unarchived",
                     "area":            area,
                 }
