@@ -139,45 +139,31 @@ def _collect_era5(study: Study, cds_key: str = None) -> Path:
         if key else cdsapi.Client()
     )
 
-    if len(months_days) == 1:
-        (yr, mo), days = next(iter(months_days.items()))
-        request = {
-            "variable":        _ERA5_VARIABLES,
-            "year":            str(yr),
-            "month":           f"{mo:02d}",
-            "day":             days,
-            "time":            [f"{h:02d}:00" for h in range(24)],
-            "data_format":     "grib",
-            "download_format": "unarchived",
-            "area":            area,
-        }
-        client.retrieve("reanalysis-era5-land", request).download(str(out_path))
-    else:
-        # Multiple months: download each separately then concatenate
-        import shutil
-        parts = []
-        for (yr, mo), days in months_days.items():
-            part_path = study.weather_raw_dir / f"era5_{yr}_{mo:02d}.nc"
-            if not part_path.exists():
-                request = {
-                    "variable":        _ERA5_VARIABLES,
-                    "year":            str(yr),
-                    "month":           f"{mo:02d}",
-                    "day":             days,
-                    "time":            [f"{h:02d}:00" for h in range(24)],
-                    "data_format":     "netcdf",
-                    "download_format": "unarchived",
-                    "area":            area,
-                }
-                print(f"[era5] downloading {yr}-{mo:02d} → {part_path}")
-                client.retrieve("reanalysis-era5-land", request).download(str(part_path))
-            parts.append(part_path)
+    parts = []
+    for (yr, mo), days in months_days.items():
+        part_path = study.weather_raw_dir / f"era5_{yr}_{mo:02d}.nc"
+        if not part_path.exists():
+            request = {
+                "variable":        _ERA5_VARIABLES,
+                "year":            str(yr),
+                "month":           f"{mo:02d}",
+                "day":             days,
+                "time":            [f"{h:02d}:00" for h in range(24)],
+                "data_format":     "netcdf",
+                "download_format": "unarchived",
+                "area":            area,
+            }
+            print(f"[era5] downloading {yr}-{mo:02d} → {part_path}")
+            client.retrieve("reanalysis-era5-land", request).download(str(part_path))
+        parts.append(part_path)
 
-        # Concatenate parts into a single file
-        with open(out_path, "wb") as out_f:
-            for p in parts:
-                with open(p, "rb") as pf:
-                    shutil.copyfileobj(pf, out_f)
+    if len(parts) == 1:
+        parts[0].rename(out_path)
+    else:
+        import xarray as xr
+        ds = xr.open_mfdataset(parts, combine="by_coords")
+        ds.to_netcdf(out_path)
+        ds.close()
         for p in parts:
             p.unlink(missing_ok=True)
 

@@ -1,3 +1,4 @@
+# core
 numpy
 pandas
 geopandas
@@ -6,10 +7,15 @@ pyproj
 rasterio
 scipy
 scikit-learn
+pyarrow
+
+# data collection
 requests
 h5py
 tqdm
 cdsapi
+
+# ERA5 / NetCDF
 xarray
 netCDF4
 

@@ -20,6 +20,9 @@ __pycache__/
 *.egg-info/
 .venv/
 
+# study data
+fort_mcmurray_2016/
+
 # project files
 PIPELINE.md
 pyproject.toml
