@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wildfire Spread Visualization</title>
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Left panel ─────────────────────────────────────────────── -->
+    <aside id="panel">
+      <header id="panel-header">
+        <h1 id="study-name">Loading…</h1>
+        <a href="fire_growth.html" id="growth-link" title="Fire growth chart">↗ Growth</a>
+      </header>
+
+      <section class="control-group">
+        <label for="fold-select">Fold</label>
+        <select id="fold-select"></select>
+      </section>
+
+      <section class="control-group">
+        <label for="pair-select">Pair (T1 → T2)</label>
+        <select id="pair-select"></select>
+      </section>
+
+      <section class="layer-group">
+        <h2>Layers</h2>
+        <label class="layer-toggle">
+          <input type="checkbox" id="layer-boundary" checked />
+          <span class="dot" style="background:#f97316"></span> Fire boundary
+        </label>
+        <label class="layer-toggle">
+          <input type="checkbox" id="layer-selector" checked />
+          <span class="dot" style="background:#facc15;opacity:.6"></span> Receptor selector
+        </label>
+        <label class="layer-toggle">
+          <input type="checkbox" id="layer-receptors" checked />
+          <span class="dot" style="background:#60a5fa"></span> Receptors
+        </label>
+        <label class="layer-toggle">
+          <input type="checkbox" id="layer-sources" checked />
+          <span class="dot" style="background:#f97316"></span> Sources A
+        </label>
+      </section>
+
+      <section class="legend-group">
+        <h2>Label</h2>
+        <div class="legend-item">
+          <span class="dot" style="background:#ef4444"></span> Burned (T2)
+        </div>
+        <div class="legend-item">
+          <span class="dot" style="background:#3b82f6"></span> Unburned
+        </div>
+        <div class="legend-item">
+          <span class="dot" style="background:#9ca3af"></span> Cloud
+        </div>
+      </section>
+
+      <section id="pair-stats" class="stats-group" hidden>
+        <h2>Pair stats</h2>
+        <div id="stats-content"></div>
+      </section>
+
+      <section id="cell-info" class="info-group" hidden>
+        <h2>Cell info</h2>
+        <div id="cell-content"></div>
+      </section>
+    </aside>
+
+    <!-- ── Map ────────────────────────────────────────────────────── -->
+    <main id="map-container">
+      <div id="map"></div>
+    </main>
+
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

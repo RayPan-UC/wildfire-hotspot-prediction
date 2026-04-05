@@ -31,4 +31,4 @@ tests/.env
 
 # system
 .DS_Store
-Thumbs.db
+Thumbs.dbvisualize/node_modules/
