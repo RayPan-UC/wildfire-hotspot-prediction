@@ -37,9 +37,9 @@ def snap_grid_ids(xy: np.ndarray, grid_res: float = 500.0) -> np.ndarray:
     Returns:
         1-D array of n strings, each of the form "<snapped_x>_<snapped_y>".
     """
-    sx = (np.round(xy[:, 0] / grid_res) * grid_res).astype(int)
-    sy = (np.round(xy[:, 1] / grid_res) * grid_res).astype(int)
-    return np.array([f"{x}_{y}" for x, y in zip(sx, sy)])
+    sx = (np.round(xy[:, 0] / grid_res) * grid_res).astype(np.int64)
+    sy = (np.round(xy[:, 1] / grid_res) * grid_res).astype(np.int64)
+    return np.char.add(np.char.add(sx.astype(str), "_"), sy.astype(str))
 
 
 def decode_grid_id(grid_id: str) -> tuple[float, float]:

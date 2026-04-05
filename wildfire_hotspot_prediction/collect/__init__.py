@@ -25,6 +25,7 @@ def collect(
     """
     import pandas as pd
 
+    print("[collect] starting data collection ...")
     print("[collect] stage 1/3 — hotspots")
     collect_hotspots(study, api_key=firms_api_key)
 

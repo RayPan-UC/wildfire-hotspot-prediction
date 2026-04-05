@@ -27,6 +27,7 @@ def preprocess(study: Study) -> None:
     Args:
         study: Study instance.
     """
+    print("[preprocess] starting preprocessing ...")
     print("[preprocess] === stage 1/5: hotspots ===")
     hotspot_data = preprocess_hotspots(study)
 

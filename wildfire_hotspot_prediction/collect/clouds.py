@@ -19,6 +19,7 @@ Credentials:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -73,9 +74,17 @@ def collect_clouds(
         print("[clouds] EARTHDATA_TOKEN not set — skipping cloud mask download")
         return study.clouds_raw_dir
 
-    print(f"[clouds] pre-fetching {len(timestamps)} timestamps...")
-    for ts in timestamps:
-        cache.get_tree(ts)   # triggers download + cache
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        tqdm = None
+
+    n_cached = sum(1 for ts in timestamps if cache._is_cached(ts))
+    print(f"[clouds] {n_cached}/{len(timestamps)} already cached  —  fetching {len(timestamps) - n_cached} new ...")
+
+    it = tqdm(timestamps, desc="clouds", unit="ts", ncols=80) if tqdm else timestamps
+    for ts in it:
+        cache.get_tree(ts)   # fast if already cached, downloads if new
 
     return study.clouds_raw_dir
 
@@ -125,7 +134,41 @@ class CloudMaskCache:
             print("  [CloudMaskCache] EARTHDATA_TOKEN not set – cloud masking disabled.")
 
         self._tree_cache: dict = {}    # cache_key → np.ndarray | None
+
+        # Persisted t2_ns → cache_key mapping (survives restarts)
+        self._t2_map_path = self._cache_dir / "t2_key_map.json"
         self._t2_key_cache: dict = {}  # t2_ns (int) → cache_key | ""
+        self._load_t2_map()
+
+    # ── Persistence helpers ───────────────────────────────────────────────────
+
+    def _load_t2_map(self):
+        """Load persisted t2_ns → cache_key mapping from disk (if present)."""
+        if self._t2_map_path.exists():
+            try:
+                raw = json.loads(self._t2_map_path.read_text())
+                self._t2_key_cache = {int(k): v for k, v in raw.items()}
+            except Exception:
+                self._t2_key_cache = {}
+
+    def _save_t2_map(self):
+        """Persist the t2_ns → cache_key mapping to disk."""
+        try:
+            self._t2_map_path.write_text(
+                json.dumps({str(k): v for k, v in self._t2_key_cache.items()})
+            )
+        except Exception:
+            pass
+
+    def _is_cached(self, t2: pd.Timestamp) -> bool:
+        """True if this timestamp already has a local .npy or .none file."""
+        t2_ns = t2.value
+        if t2_ns not in self._t2_key_cache:
+            return False
+        key = self._t2_key_cache[t2_ns]
+        if not key:
+            return True   # previously found: no granule
+        return self._npy_path(key).exists() or self._none_path(key).exists()
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -180,13 +223,32 @@ class CloudMaskCache:
     def _get_xy(self, t2: pd.Timestamp) -> "np.ndarray | None":
         t2_ns = t2.value
 
+        # ── Fast path: t2 → key already known (persisted across restarts) ────
+        if t2_ns in self._t2_key_cache:
+            key = self._t2_key_cache[t2_ns]
+            if not key:
+                return None       # previously found: no granule
+            if key in self._tree_cache:
+                return self._tree_cache[key]
+            npy_path = self._npy_path(key)
+            if npy_path.exists():
+                xy = np.load(npy_path)
+                self._tree_cache[key] = xy
+                return xy
+            if self._none_path(key).exists():
+                return None
+            # key known but file missing — fall through to re-download
+
+        # ── Slow path: query CMR API ──────────────────────────────────────────
         granule_dt, url = self._find_granule(t2)
         if granule_dt is None:
             self._t2_key_cache[t2_ns] = ""
+            self._save_t2_map()
             return None
 
         key = self._cache_key(granule_dt)
         self._t2_key_cache[t2_ns] = key
+        self._save_t2_map()
 
         # In-memory cache hit
         if key in self._tree_cache:
