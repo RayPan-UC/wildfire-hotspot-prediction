@@ -1,0 +1,1 @@
+from wildfire_hotspot_prediction.export.render import export_render
