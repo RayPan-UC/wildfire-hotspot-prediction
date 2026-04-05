@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wildfire-hotspot-prediction"
+version = "0.1.0"
+description = "A library for building wildfire spread prediction datasets and models."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "geopandas",
+    "shapely",
+    "pyproj",
+    "rasterio",
+    "scipy",
+    "scikit-learn",
+    "xgboost",
+    "requests",
+    "h5py",
+    "tqdm",
+    "cdsapi",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[project.optional-dependencies]
+dev = ["pytest", "python-dotenv"]
