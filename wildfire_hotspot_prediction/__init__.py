@@ -60,8 +60,12 @@ from wildfire_hotspot_prediction.predict.predict import predict
 
 from wildfire_hotspot_prediction.export.render import export_render
 
-from wildfire_hotspot_prediction.build_prediction_data import WildfirePredictor
-from wildfire_hotspot_prediction.build_prediction_data.feature_builder import build_prediction_features
+from wildfire_hotspot_prediction.build_prediction_data import (
+    WildfirePredictor,
+    build_prediction_features,
+    run_prediction_pipeline,
+    ensure_era5_coverage,
+)
 
 from wildfire_hotspot_prediction.pipeline import run_pipeline
 from wildfire_hotspot_prediction.models  import ensure_models
@@ -78,6 +82,8 @@ __all__ = [
     "export_render",
     "WildfirePredictor",
     "build_prediction_features",
+    "run_prediction_pipeline",
+    "ensure_era5_coverage",
     "run_pipeline",
     "ensure_models",
 ]

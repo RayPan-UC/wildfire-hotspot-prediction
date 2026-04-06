@@ -87,7 +87,7 @@ def build_prediction_features(
     steps = fire_state.steps
     if not steps:
         log.warning("[feature_builder] fire_state has no steps")
-        return pd.DataFrame()
+        return pd.DataFrame(), {}
 
     t1_actual = min(steps, key=lambda s: abs((s - t1).total_seconds()))
     log.info("[feature_builder] t1 snapped %s → %s", t1, t1_actual)
@@ -101,7 +101,7 @@ def build_prediction_features(
         selector = build_receptor_selector(t1_actual, fire_state)
     if selector is None or selector.is_empty:
         log.warning("[feature_builder] no receptor selector for %s", t1_actual)
-        return pd.DataFrame()
+        return pd.DataFrame(), {}
 
     # ── Load hotspots ─────────────────────────────────────────────────────────
     hs_df = pd.read_parquet(proc_dir / "firms" / "hotspots.parquet")
@@ -124,7 +124,7 @@ def build_prediction_features(
     a_xy, a_frp = sample_sources(t1_actual, hotspot_data.gdf, fire_state)
     if len(a_xy) == 0:
         log.warning("[feature_builder] no source hotspots at %s", t1_actual)
-        return pd.DataFrame()
+        return pd.DataFrame(), {}
 
     # ── T1 hotspot XY for receptor exclusion ─────────────────────────────────
     t1_mask = hs_gdf["overpass_time"] == t1_actual
@@ -142,7 +142,7 @@ def build_prediction_features(
     )
     if len(b_xy) == 0:
         log.warning("[feature_builder] no receptor candidates at %s", t1_actual)
-        return pd.DataFrame()
+        return pd.DataFrame(), {}
 
     print(f"[feature_builder] {len(b_xy):,} receptor candidates  t1={t1_actual}  delta_t={delta_t_h}h")
 
@@ -205,6 +205,71 @@ def build_prediction_features(
     # ── Interaction feature ───────────────────────────────────────────────────
     frp_x_wind = (frp_A * path_feats["wind_alignment_mean"]).astype(np.float32)
 
+    # ── Intermediates (fire context for report / spatial stage) ───────────────
+    steps_sorted = sorted(steps)
+    t1_idx = steps_sorted.index(t1_actual) if t1_actual in steps_sorted else -1
+    t0            = steps_sorted[t1_idx - 1] if t1_idx > 0 else None
+    actual_delta_h = float((t1_actual - t0).total_seconds() / 3600.0) if t0 else None
+
+    burned_area_km2 = fire_state.boundary_area_km2.get(t1_actual, 0.0)
+    n_hotspots_t1   = int(t1_mask.sum())
+    frp_sum_t1      = float(hs_gdf.loc[t1_mask, "frp"].sum())
+
+    # vector-mean wind over receptors (avoids 0/360 wraparound)
+    ws_arr = weather_df["wind_speed"].values.astype(np.float64)
+    wd_rad = np.deg2rad(weather_df["wind_dir"].values.astype(np.float64))
+    u_mean = np.nanmean(-np.sin(wd_rad) * ws_arr)
+    v_mean = np.nanmean(-np.cos(wd_rad) * ws_arr)
+
+    weather_t1 = {
+        "wind_speed_kmh": round(float(np.nanmean(ws_arr)) * 3.6, 1),
+        "wind_dir":       round(float((np.degrees(np.arctan2(-u_mean, -v_mean)) + 360) % 360), 1),
+        "temp_c":         round(float(np.nanmean(weather_df["temp_c"].values)), 1),
+        "rh":             round(float(np.nanmean(weather_df["rh"].values)), 1),
+    }
+
+    ros_arr = fwi_df["ros"].values.astype(np.float64)
+    fwi_t1 = {
+        "ffmc":        round(float(np.nanmean(fwi_df["ffmc"].values)), 1),
+        "isi":         round(float(np.nanmean(fwi_df["isi"].values)), 1),
+        "ros_mean_mh": round(float(np.nanmean(ros_arr)) * 60.0, 1),  # m/min → m/h
+        "ros_max_mh":  round(float(np.nanmax(ros_arr))  * 60.0, 1),
+    }
+
+    # wind forecast: t1 → t1+12h hourly at fire centroid
+    wind_forecast = []
+    boundary_t1 = fire_state.boundary_after.get(t1_actual)
+    if boundary_t1 is not None and not boundary_t1.is_empty:
+        centroid_xy  = np.array([[boundary_t1.centroid.x, boundary_t1.centroid.y]])
+        centroid_gid = _nearest_era5_grid_ids(centroid_xy, era5_tree, era5_gids)[0]
+        for h in range(13):
+            t = t1_actual + timedelta(hours=h)
+            snap = _nearest_in(t, cache.era5_times, cache.era5_by_time)
+            if centroid_gid in snap.index:
+                row = snap.loc[centroid_gid]
+                wind_forecast.append({
+                    "hour":      h,
+                    "speed_kmh": round(float(row["wind_speed"]) * 3.6, 1),
+                    "dir":       round(float(row["wind_dir"]), 1),
+                })
+
+    intermediates = {
+        "t1":             t1_actual.isoformat(),
+        "t0":             t0.isoformat() if t0 else None,
+        "actual_delta_h": round(actual_delta_h, 2) if actual_delta_h is not None else None,
+        "fire": {
+            "burned_area_km2":  round(burned_area_km2, 2),
+            "new_area_km2":     round(geo_feats["new_area_km2"], 3),
+            "growth_rate_km2h": round(geo_feats["growth_rate_km2h"], 3),
+            "perimeter_m":      round(geo_feats["perimeter_m"], 1),
+            "n_hotspots":       n_hotspots_t1,
+            "frp_sum":          round(frp_sum_t1, 1),
+        },
+        "weather_t1":    weather_t1,
+        "fwi_t1":        fwi_t1,
+        "wind_forecast": wind_forecast,
+    }
+
     # ── Assemble — column names must match feature_cols.json exactly ─────────
     return pd.DataFrame({
         # metadata (not features — used by backend for GeoJSON)
@@ -257,7 +322,7 @@ def build_prediction_features(
         "dist_to_fire_front": dist_front,
         # pair metadata feature
         "delta_t_h": np.float32(delta_t_h),
-    })
+    }), intermediates
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
