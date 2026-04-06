@@ -32,9 +32,7 @@ import numpy as np
 import requests
 import rasterio
 import rasterio.windows
-from rasterio.crs import CRS
 from rasterio.mask import mask as rasterio_mask
-from rasterio.warp import transform_bounds
 from shapely.geometry import box
 
 from wildfire_hotspot_prediction.study import Study
@@ -204,11 +202,12 @@ def _collect_terrain(study: Study) -> Path:
 
     lon_min, lat_min, lon_max, lat_max = study.bbox
 
-    # Reproject bbox to EPSG:3979 (MRDEM native CRS)
-    minx, miny, maxx, maxy = transform_bounds(
-        CRS.from_epsg(4326), CRS.from_epsg(3979),
-        lon_min, lat_min, lon_max, lat_max,
-    )
+    # Reproject bbox to EPSG:3979 (MRDEM native CRS) — use pyproj to avoid
+    # rasterio's bundled GDAL not finding proj.db on Windows
+    from pyproj import Transformer as _T
+    _tr = _T.from_crs("EPSG:4326", "EPSG:3979", always_xy=True)
+    minx, miny = _tr.transform(lon_min, lat_min)
+    maxx, maxy = _tr.transform(lon_max, lat_max)
     print(f"[terrain] streaming DTM window from MRDEM COG...")
 
     with rasterio.open(_MRDEM_DTM_URL) as src:

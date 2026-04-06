@@ -157,7 +157,8 @@ def _preprocess_terrain(study: Study) -> Path:
         Path to data_processed/terrain/.
     """
     study.terrain_dir.mkdir(parents=True, exist_ok=True)
-    dst_crs = CRS.from_epsg(3978)
+    from pyproj import CRS as _pCRS
+    dst_crs = CRS.from_wkt(_pCRS.from_epsg(3978).to_wkt())
 
     for name in ("dtm", "slope", "aspect"):
         src_path = study.terrain_raw_dir / f"{name}.tif"
@@ -201,7 +202,8 @@ def _preprocess_landcover(study: Study) -> Path:
     study.landcover_dir.mkdir(parents=True, exist_ok=True)
     src_path = study.landcover_raw_dir / "fuel_type.tif"
     dst_path = study.landcover_dir     / "fuel_type.tif"
-    dst_crs  = CRS.from_epsg(3978)
+    from pyproj import CRS as _pCRS
+    dst_crs  = CRS.from_wkt(_pCRS.from_epsg(3978).to_wkt())
 
     if dst_path.exists():
         print(f"[preprocess] landcover already exists, skipping → {dst_path}")
