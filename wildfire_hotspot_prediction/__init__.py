@@ -34,7 +34,9 @@ from pathlib import Path
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-os.environ["PROJ_DATA"] = str(Path(__file__).parent / "utils" / "proj_data")
+_proj_data = str(Path(__file__).parent / "utils" / "proj_data")
+os.environ["PROJ_DATA"] = _proj_data   # pyproj / PROJ >= 7
+os.environ["PROJ_LIB"]  = _proj_data   # rasterio / PROJ < 7
 
 from wildfire_hotspot_prediction.study import Study, define_study
 
