@@ -125,8 +125,9 @@ def _preprocess_era5(study: Study) -> Path:
     # Project ERA5 coords to EPSG:3978, snap to nearest 500 m cell centre.
     # Multiple 500 m cells will share the same ERA5 grid_id (nearest-neighbour).
     unique_pts = df[["latitude", "longitude"]].drop_duplicates()
-    xs, ys = rasterio.warp.transform(
-        "EPSG:4326", _PROJ_CRS,
+    from pyproj import Transformer as _T
+    _tr = _T.from_crs("EPSG:4326", _PROJ_CRS, always_xy=True)
+    xs, ys = _tr.transform(
         unique_pts["longitude"].tolist(),
         unique_pts["latitude"].tolist(),
     )
