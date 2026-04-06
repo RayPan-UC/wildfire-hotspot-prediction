@@ -21,17 +21,22 @@ _ZENODO_ARCHIVE = "https://zenodo.org/api/records/19435138/files-archive"
 
 _REQUIRED = [
     "model_full_xgb.pkl",
+    "model_full_rf.pkl",
+    "model_full_lr.pkl",
     "model_full_thresholds.json",
 ]
 
 
-def ensure_models(study) -> None:
+def ensure_models(study=None, *, models_dir: Path = None) -> None:
     """Download model files from Zenodo if any required file is missing.
 
     Args:
-        study: Study instance — models are written to study.models_dir.
+        study:      Study instance — models are written to study.models_dir.
+        models_dir: Explicit override for the models directory.
     """
-    models_dir = study.models_dir
+    if models_dir is None and study is None:
+        raise ValueError("Either study or models_dir must be provided")
+    models_dir = Path(models_dir) if models_dir is not None else study.models_dir
     missing = [f for f in _REQUIRED if not (models_dir / f).exists()]
 
     if not missing:

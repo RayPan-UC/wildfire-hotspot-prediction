@@ -14,12 +14,13 @@ library:
 
 The Predictor loads:
     models_dir/model_full_{model_name}.pkl
-    models_dir/feature_cols.json
+
+Feature column names are read from the booster's internal metadata
+(``model.get_booster().feature_names`` for XGBoost).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import pickle
 from pathlib import Path
@@ -44,15 +45,6 @@ class WildfirePredictor:
         self.models_dir  = Path(models_dir)
         self.model_name  = model_name
 
-        # Load feature column list
-        feat_path = self.models_dir / "feature_cols.json"
-        if not feat_path.exists():
-            raise FileNotFoundError(
-                f"{feat_path} not found — run train(use_all_data=True) first."
-            )
-        self.feature_cols: list[str] = json.loads(feat_path.read_text())
-        self._fuel_dummy_cols = [c for c in self.feature_cols if c.startswith("fuel_type_")]
-
         # Load model
         model_path = self.models_dir / f"model_full_{model_name}.pkl"
         if not model_path.exists():
@@ -61,6 +53,16 @@ class WildfirePredictor:
             )
         with open(model_path, "rb") as f:
             self.model = pickle.load(f)
+
+        # Derive feature columns from model metadata (no separate feature_cols.json needed)
+        booster = getattr(self.model, "get_booster", None)
+        if booster is not None:
+            self.feature_cols: list[str] = booster().feature_names or []
+        else:
+            # Fallback for non-XGBoost models (RF, LR): use feature_names_in_
+            self.feature_cols = list(getattr(self.model, "feature_names_in_", []))
+
+        self._fuel_dummy_cols = [c for c in self.feature_cols if c.startswith("fuel_type_")]
 
         log.info("[WildfirePredictor] loaded %s  (%d features)", model_path.name,
                  len(self.feature_cols))
