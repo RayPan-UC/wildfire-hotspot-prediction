@@ -39,6 +39,7 @@ from wildfire_hotspot_prediction.training.features import (
     join_fwi,
     fire_geometry_features,
     dist_to_fire_front,
+    _nearest_era5_grid_ids,
 )
 from wildfire_hotspot_prediction.utils.geo import snap_grid_ids
 
@@ -144,7 +145,7 @@ def build_prediction_features(
         log.warning("[feature_builder] no receptor candidates at %s", t1_actual)
         return pd.DataFrame(), {}
 
-    print(f"[feature_builder] {len(b_xy):,} receptor candidates  t1={t1_actual}  delta_t={delta_t_h}h")
+    log.info("[feature_builder] %d receptor candidates  t1=%s  delta_t=%.1fh", len(b_xy), t1_actual, delta_t_h)
 
     # ── Nearest source A per receptor B ──────────────────────────────────────
     a_tree   = cKDTree(a_xy)
