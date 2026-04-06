@@ -300,14 +300,11 @@ def _collect_landcover(study: Study) -> Path:
     # Clip to study bbox
     lon_min, lat_min, lon_max, lat_max = study.bbox
     with rasterio.open(fuel_bytes) as src:
-        # Reproject AOI bbox to raster CRS using rasterio (avoids pyproj PROJ conflict)
-        from rasterio.warp import transform_bounds as _tb
-        from rasterio.crs import CRS as _CRS
+        from pyproj import Transformer as _T
         from shapely.geometry import mapping
-        minx, miny, maxx, maxy = _tb(
-            _CRS.from_epsg(4326), src.crs,
-            lon_min, lat_min, lon_max, lat_max,
-        )
+        _tr = _T.from_crs("EPSG:4326", src.crs.to_wkt(), always_xy=True)
+        minx, miny = _tr.transform(lon_min, lat_min)
+        maxx, maxy = _tr.transform(lon_max, lat_max)
         aoi_proj = [mapping(box(minx, miny, maxx, maxy))]
 
         out_image, out_transform = rasterio_mask(src, aoi_proj, crop=True)
