@@ -18,9 +18,11 @@ plus ``b_x``, ``b_y``, ``b_grid_id`` metadata columns for GeoJSON rendering.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from datetime import timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -32,6 +34,7 @@ from wildfire_hotspot_prediction.training.receptor_selector import build_recepto
 from wildfire_hotspot_prediction.training.sampling import sample_sources, sample_receptors
 from wildfire_hotspot_prediction.training.sampling_path import path_features
 from wildfire_hotspot_prediction.training.features import (
+    FeatureCache,
     build_era5_index,
     build_feature_cache,
     join_static,
@@ -44,15 +47,67 @@ from wildfire_hotspot_prediction.training.features import (
 )
 from wildfire_hotspot_prediction.utils.geo import snap_grid_ids
 
+if TYPE_CHECKING:
+    import geopandas as gpd
+
 log = logging.getLogger(__name__)
 
 _GRID_RES_M = 500.0
 
 
+@dataclasses.dataclass
+class PredictionCache:
+    """Pre-loaded static data shared across all timestep predictions for a study."""
+    era5_tree: cKDTree
+    era5_gids: np.ndarray
+    feature_cache: FeatureCache
+    hs_gdf: "gpd.GeoDataFrame"
+
+
+def build_prediction_cache(study: Study) -> PredictionCache:
+    """Load and index all static data once for reuse across timestep predictions.
+
+    Call once per study before looping over timesteps, then pass the returned
+    cache to build_prediction_features(..., pred_cache=cache).
+    """
+    import geopandas as gpd
+
+    proc_dir = study.data_processed_dir
+
+    era5        = pd.read_parquet(proc_dir / "weather" / "era5.parquet")
+    ffmc_daily  = pd.read_parquet(proc_dir / "weather" / "ffmc_daily.parquet")
+    isi_hourly  = pd.read_parquet(proc_dir / "weather" / "isi_hourly.parquet")
+    ros_hourly  = pd.read_parquet(proc_dir / "weather" / "ros_hourly.parquet")
+    grid_static = pd.read_parquet(proc_dir / "grid_static.parquet")
+
+    if ffmc_daily["date"].dtype == object:
+        ffmc_daily["date"] = pd.to_datetime(ffmc_daily["date"]).dt.date
+
+    era5_tree, era5_gids = build_era5_index(era5)
+    feature_cache = build_feature_cache(grid_static, era5, ffmc_daily, isi_hourly, ros_hourly)
+
+    hs_df = pd.read_parquet(proc_dir / "firms" / "hotspots.parquet")
+    hs_df["overpass_time"] = pd.to_datetime(hs_df["overpass_time"])
+    hs_gdf = gpd.GeoDataFrame(
+        hs_df,
+        geometry=gpd.points_from_xy(hs_df["x_proj"], hs_df["y_proj"]),
+        crs="EPSG:3978",
+    )
+
+    log.info("[feature_builder] prediction cache built for %s", study.name)
+    return PredictionCache(
+        era5_tree=era5_tree,
+        era5_gids=era5_gids,
+        feature_cache=feature_cache,
+        hs_gdf=hs_gdf,
+    )
+
+
 def build_prediction_features(
-    study:     Study,
-    t1:        "pd.Timestamp | str",
-    delta_t_h: float,
+    study:      Study,
+    t1:         "pd.Timestamp | str",
+    delta_t_h:  float,
+    pred_cache: PredictionCache | None = None,
 ) -> pd.DataFrame:
     """Build inference features for (T1, T1+delta_t) without T2 observations.
 
@@ -105,19 +160,21 @@ def build_prediction_features(
         log.warning("[feature_builder] no receptor selector for %s", t1_actual)
         return pd.DataFrame(), {}
 
-    # ── Load hotspots ─────────────────────────────────────────────────────────
-    hs_df = pd.read_parquet(proc_dir / "firms" / "hotspots.parquet")
-    hs_df["overpass_time"] = pd.to_datetime(hs_df["overpass_time"])
+    # ── Static data: use pre-built cache or load on-demand ───────────────────
+    if pred_cache is not None:
+        era5_tree     = pred_cache.era5_tree
+        era5_gids     = pred_cache.era5_gids
+        cache         = pred_cache.feature_cache
+        hs_gdf        = pred_cache.hs_gdf
+    else:
+        _pc = build_prediction_cache(study)
+        era5_tree, era5_gids, cache, hs_gdf = (
+            _pc.era5_tree, _pc.era5_gids, _pc.feature_cache, _pc.hs_gdf
+        )
 
     # ── Source A hotspots at T1 ───────────────────────────────────────────────
-    import geopandas as gpd
     from wildfire_hotspot_prediction.preprocess.hotspots import HotspotData
 
-    hs_gdf = gpd.GeoDataFrame(
-        hs_df,
-        geometry=gpd.points_from_xy(hs_df["x_proj"], hs_df["y_proj"]),
-        crs="EPSG:3978",
-    )
     hotspot_data = HotspotData(
         gdf=hs_gdf,
         overpass_times=sorted(hs_gdf["overpass_time"].unique().tolist()),
@@ -172,19 +229,6 @@ def build_prediction_features(
 
     # ── Grid IDs for B cells ──────────────────────────────────────────────────
     b_grid_ids = snap_grid_ids(b_xy, _GRID_RES_M)
-
-    # ── Feature cache ─────────────────────────────────────────────────────────
-    era5        = pd.read_parquet(proc_dir / "weather" / "era5.parquet")
-    ffmc_daily  = pd.read_parquet(proc_dir / "weather" / "ffmc_daily.parquet")
-    isi_hourly  = pd.read_parquet(proc_dir / "weather" / "isi_hourly.parquet")
-    ros_hourly  = pd.read_parquet(proc_dir / "weather" / "ros_hourly.parquet")
-    grid_static = pd.read_parquet(proc_dir / "grid_static.parquet")
-
-    if ffmc_daily["date"].dtype == object:
-        ffmc_daily["date"] = pd.to_datetime(ffmc_daily["date"]).dt.date
-
-    era5_tree, era5_gids = build_era5_index(era5)
-    cache = build_feature_cache(grid_static, era5, ffmc_daily, isi_hourly, ros_hourly)
 
     # ── Point features ────────────────────────────────────────────────────────
     static_df  = join_static(b_grid_ids, cache=cache)

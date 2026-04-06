@@ -65,6 +65,8 @@ from wildfire_hotspot_prediction.export.render import export_render
 from wildfire_hotspot_prediction.build_prediction_data import (
     WildfirePredictor,
     build_prediction_features,
+    build_prediction_cache,
+    PredictionCache,
     run_prediction_pipeline,
     ensure_era5_coverage,
 )
@@ -84,6 +86,8 @@ __all__ = [
     "export_render",
     "WildfirePredictor",
     "build_prediction_features",
+    "build_prediction_cache",
+    "PredictionCache",
     "run_prediction_pipeline",
     "ensure_era5_coverage",
     "run_pipeline",

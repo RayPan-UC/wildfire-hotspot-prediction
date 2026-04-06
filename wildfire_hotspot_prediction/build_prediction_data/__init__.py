@@ -1,9 +1,13 @@
 from wildfire_hotspot_prediction.build_prediction_data.predictor import WildfirePredictor
-from wildfire_hotspot_prediction.build_prediction_data.feature_builder import build_prediction_features
+from wildfire_hotspot_prediction.build_prediction_data.feature_builder import (
+    build_prediction_features,
+    build_prediction_cache,
+    PredictionCache,
+)
 from wildfire_hotspot_prediction.build_prediction_data.era5_check import ensure_era5_coverage
 
 
-def run_prediction_pipeline(study, t1, delta_t_h, predictor, threshold):
+def run_prediction_pipeline(study, t1, delta_t_h, predictor, threshold, pred_cache=None):
     """Build features, run prediction, and return results with fire context.
 
     Args:
@@ -12,6 +16,8 @@ def run_prediction_pipeline(study, t1, delta_t_h, predictor, threshold):
         delta_t_h:  Prediction horizon in hours (e.g. 3, 6, 12).
         predictor:  WildfirePredictor instance.
         threshold:  Decision threshold for binary prediction.
+        pred_cache: Optional PredictionCache (pre-loaded static data). If None,
+                    data is loaded from disk on every call (slow).
 
     Returns:
         Tuple of (result_df, intermediates):
@@ -21,7 +27,9 @@ def run_prediction_pipeline(study, t1, delta_t_h, predictor, threshold):
     """
     import pandas as pd
 
-    features_df, intermediates = build_prediction_features(study, t1=t1, delta_t_h=float(delta_t_h))
+    features_df, intermediates = build_prediction_features(
+        study, t1=t1, delta_t_h=float(delta_t_h), pred_cache=pred_cache
+    )
     if features_df.empty:
         return pd.DataFrame(), intermediates
 
