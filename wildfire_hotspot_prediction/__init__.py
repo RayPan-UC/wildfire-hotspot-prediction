@@ -64,6 +64,7 @@ from wildfire_hotspot_prediction.build_prediction_data import WildfirePredictor
 from wildfire_hotspot_prediction.build_prediction_data.feature_builder import build_prediction_features
 
 from wildfire_hotspot_prediction.pipeline import run_pipeline
+from wildfire_hotspot_prediction.models  import ensure_models
 
 __all__ = [
     "Study", "define_study",
@@ -78,4 +79,5 @@ __all__ = [
     "WildfirePredictor",
     "build_prediction_features",
     "run_pipeline",
+    "ensure_models",
 ]
