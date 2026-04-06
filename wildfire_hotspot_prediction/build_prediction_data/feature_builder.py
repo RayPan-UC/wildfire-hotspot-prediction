@@ -40,6 +40,7 @@ from wildfire_hotspot_prediction.training.features import (
     fire_geometry_features,
     dist_to_fire_front,
     _nearest_era5_grid_ids,
+    _nearest_in,
 )
 from wildfire_hotspot_prediction.utils.geo import snap_grid_ids
 
