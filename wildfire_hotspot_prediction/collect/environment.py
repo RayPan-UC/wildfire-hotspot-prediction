@@ -161,7 +161,7 @@ def _collect_era5(study: Study, cds_key: str = None) -> Path:
         parts[0].rename(out_path)
     else:
         import xarray as xr
-        ds = xr.open_mfdataset(parts, combine="by_coords")
+        ds = xr.open_mfdataset(parts, combine="by_coords", engine="netcdf4")
         ds.to_netcdf(out_path)
         ds.close()
         for p in parts:
