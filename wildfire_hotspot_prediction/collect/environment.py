@@ -139,8 +139,8 @@ def _collect_era5(study: Study, cds_key: str = None) -> Path:
         if key else cdsapi.Client()
     )
 
-    parts = []
-    for (yr, mo), days in months_days.items():
+    def _download_month(yr_mo_days):
+        (yr, mo), days = yr_mo_days
         part_path = study.weather_raw_dir / f"era5_{yr}_{mo:02d}.nc"
         if not part_path.exists():
             request = {
@@ -155,7 +155,13 @@ def _collect_era5(study: Study, cds_key: str = None) -> Path:
             }
             print(f"[era5] downloading {yr}-{mo:02d} → {part_path}")
             client.retrieve("reanalysis-era5-land", request).download(str(part_path))
-        parts.append(part_path)
+        return part_path
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=len(months_days)) as pool:
+        futures = {pool.submit(_download_month, item): item for item in months_days.items()}
+        parts = [f.result() for f in as_completed(futures)]
+    parts.sort()  # ensure chronological order for xarray merge
 
     if len(parts) == 1:
         parts[0].rename(out_path)
