@@ -15,9 +15,10 @@ h5py
 tqdm
 cdsapi
 
-# ERA5 / NetCDF
+# ERA5 / xarray
 xarray
 netCDF4
+xgboost
 
 # dev
 pytest
