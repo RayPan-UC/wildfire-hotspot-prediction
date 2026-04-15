@@ -35,6 +35,7 @@ log = logging.getLogger(__name__)
 
 MODELS = ("xgb", "rf", "lr")
 
+
 # All FBP fuel type codes (101–122) — full Canada FBP catalogue
 # Mirrors the keys of _FBP_PARAMS in preprocess/fire_weather_index.py
 _FUEL_TYPE_CODES = [
@@ -121,48 +122,51 @@ def _prepare_X(df: pd.DataFrame) -> np.ndarray:
     return X
 
 
-def _build_models(spw: float) -> dict:
-    """Instantiate all three model objects."""
-    try:
-        from xgboost import XGBClassifier
-        xgb = XGBClassifier(
+def _build_models(spw: float, names: tuple[str, ...] = MODELS) -> dict:
+    """Instantiate model objects for the requested names."""
+    available: dict[str, object] = {}
+
+    if "xgb" in names:
+        try:
+            from xgboost import XGBClassifier
+            available["xgb"] = XGBClassifier(
+                n_estimators=500,
+                max_depth=4,
+                learning_rate=0.03,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                min_child_weight=10,
+                gamma=1.0,
+                scale_pos_weight=spw,
+                eval_metric="logloss",
+                random_state=42,
+                n_jobs=-1,
+            )
+        except ImportError:
+            log.warning("[train] xgboost not installed — skipping xgb")
+
+    if "rf" in names:
+        available["rf"] = RandomForestClassifier(
             n_estimators=500,
-            max_depth=4,
-            learning_rate=0.03,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            min_child_weight=10,
-            gamma=1.0,
-            scale_pos_weight=spw,
-            eval_metric="logloss",
-            random_state=42,
-            n_jobs=-1,
-        )
-    except ImportError:
-        xgb = None
-
-    rf = RandomForestClassifier(
-        n_estimators=500,
-        max_depth=12,
-        class_weight="balanced",
-        random_state=42,
-        n_jobs=-1,
-    )
-
-    lr = Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", LogisticRegression(
-            max_iter=1000,
+            max_depth=12,
+            max_samples=0.5,
             class_weight="balanced",
             random_state=42,
             n_jobs=-1,
-        )),
-    ])
+        )
 
-    models = {"rf": rf, "lr": lr}
-    if xgb is not None:
-        models["xgb"] = xgb
-    return models
+    if "lr" in names:
+        available["lr"] = Pipeline([
+            ("scaler", StandardScaler()),
+            ("clf", LogisticRegression(
+                max_iter=1000,
+                class_weight="balanced",
+                random_state=42,
+                n_jobs=-1,
+            )),
+        ])
+
+    return available
 
 
 def _youden_threshold(y_true: np.ndarray, y_prob: np.ndarray) -> float:
@@ -221,15 +225,16 @@ def _oof_threshold(model, X: np.ndarray, y: np.ndarray,
 
 def _fit_and_save(X: np.ndarray, y: np.ndarray,
                   groups: np.ndarray,
-                  models_dir: Path, stem: str) -> None:
-    """Train all models, compute OOF Youden threshold, and save to disk."""
+                  models_dir: Path, stem: str,
+                  names: tuple[str, ...] = MODELS) -> None:
+    """Train requested models, compute OOF Youden threshold, and save to disk."""
     n_pos = max(int((y == 1).sum()), 1)
     n_neg = max(int((y == 0).sum()), 1)
     spw   = round(n_neg / n_pos, 2)
 
     thresholds: dict[str, float] = {}
 
-    for name, model in _build_models(spw).items():
+    for name, model in _build_models(spw, names=names).items():
         print(f"    training {name} ...")
         model.fit(X, y)
         out = models_dir / f"{stem}_{name}.pkl"
@@ -247,37 +252,45 @@ def _fit_and_save(X: np.ndarray, y: np.ndarray,
     log.info("[train] saved %s", thr_path.name)
 
 
-def _stem_exists(models_dir: Path, stem: str) -> bool:
+def _stem_exists(models_dir: Path, stem: str,
+                 names: tuple[str, ...] = MODELS) -> bool:
     """Return True if all model pkl files for this stem already exist."""
     return all(
         (models_dir / f"{stem}_{name}.pkl").exists()
-        for name in MODELS
+        for name in names
     )
 
 
 def train(
-    study:          Study,
-    use_all_data:   bool = False,
-    n_folds:        int  = 3,
-    override_exist: bool = False,
+    study:           Study,
+    use_all_data:    bool            = False,
+    n_folds:         int             = 3,
+    max_delta_t_h:   float | None    = None,
+    models:          tuple[str, ...] = MODELS,
+    override_exist:  bool            = False,
 ) -> None:
-    """Train XGB, RF and LR models from k-fold training parquets.
+    """Train wildfire spread models from k-fold training parquets.
 
     Args:
         study:          Study instance.
         use_all_data:   If True, train on all data combined (model_full_*.pkl).
                         If False, train one set per fold (model_fold_<k>_*.pkl).
         n_folds:        Number of folds. Defaults to 3.
+        max_delta_t_h:  If set, discard rows where delta_t_h > max_delta_t_h
+                        before training.  Useful to restrict training to a
+                        specific forecast range (e.g. 12.0 for up to +12 h).
+        models:         Which model types to train. Defaults to all three
+                        ("xgb", "rf", "lr"). Pass ("lr",) to train LR only.
         override_exist: If False (default), skip stems whose pkl files already
                         exist. Set True to force retraining.
 
     Saves:
-        models/model_fold_<k>_xgb.pkl
-        models/model_fold_<k>_rf.pkl
-        models/model_fold_<k>_lr.pkl
+        models/model_fold_<k>_<name>.pkl   (use_all_data=False)
+        models/model_full_<name>.pkl       (use_all_data=True)
         models/feature_cols.json
     """
-    print(f"[train] starting model training  ({len(FEATURE_COLS)} features) ...")
+    print(f"[train] starting model training  ({len(FEATURE_COLS)} features"
+          f"{f', max_delta_t_h={max_delta_t_h}h' if max_delta_t_h is not None else ''}) ...")
     training_dir = study.data_processed_dir / "training"
     models_dir   = study.models_dir
     models_dir.mkdir(parents=True, exist_ok=True)
@@ -285,9 +298,14 @@ def train(
     feat_path = models_dir / "feature_cols.json"
     feat_path.write_text(json.dumps(FEATURE_COLS, indent=2))
 
+    def _load_and_filter(df: pd.DataFrame) -> pd.DataFrame:
+        if max_delta_t_h is not None:
+            df = df[df["delta_t_h"] <= max_delta_t_h]
+        return df
+
     if use_all_data:
         stem = "model_full"
-        if not override_exist and _stem_exists(models_dir, stem):
+        if not override_exist and _stem_exists(models_dir, stem, names=models):
             print(f"  [skip] {stem} already exists")
         else:
             dfs = []
@@ -301,29 +319,35 @@ def train(
             if not dfs:
                 log.error("[train] no training data found")
                 return
-            df = pd.concat(dfs, ignore_index=True)
+            df = _load_and_filter(pd.concat(dfs, ignore_index=True))
+            if df.empty:
+                log.error("[train] no rows remain after max_delta_t_h filter")
+                return
             X      = _prepare_X(df)
             y      = df["label"].values.astype(np.int8)
             groups = df["pair_id"].values
-            print(f"  full dataset: {len(df):,} rows")
-            _fit_and_save(X, y, groups, models_dir, stem)
+            print(f"  full dataset: {len(df):,} rows  (burned={int((y==1).sum()):,}  unburned={int((y==0).sum()):,})")
+            _fit_and_save(X, y, groups, models_dir, stem, names=models)
 
     else:
         for k in range(1, n_folds + 1):
             stem = f"model_fold_{k}"
-            if not override_exist and _stem_exists(models_dir, stem):
+            if not override_exist and _stem_exists(models_dir, stem, names=models):
                 print(f"  [skip] {stem} already exists")
                 continue
             fold_dir = training_dir / f"fold_{k}"
             try:
-                df = _load_fold(fold_dir, "train")
+                df = _load_and_filter(_load_fold(fold_dir, "train"))
             except FileNotFoundError:
                 log.warning("[train] fold_%d train.parquet not found — skipping", k)
+                continue
+            if df.empty:
+                log.warning("[train] fold_%d: no rows after max_delta_t_h filter — skipping", k)
                 continue
             X      = _prepare_X(df)
             y      = df["label"].values.astype(np.int8)
             groups = df["pair_id"].values
             print(f"  fold_{k}: {len(df):,} rows  (burned={int((y==1).sum()):,}  unburned={int((y==0).sum()):,})")
-            _fit_and_save(X, y, groups, models_dir, stem)
+            _fit_and_save(X, y, groups, models_dir, stem, names=models)
 
     print(f"[train] done  ->  {models_dir}")

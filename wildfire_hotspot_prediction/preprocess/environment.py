@@ -39,6 +39,34 @@ _GRID_RES = 500.0
 _PROJ_CRS = "EPSG:3978"
 
 
+def _resolve_crs(crs: CRS) -> CRS:
+    """Fix rasterio CRS that reads as EngineeringCRS on Windows.
+
+    Rasterio on Windows sometimes reads GeoTIFF CRS as LOCAL_CS
+    (EngineeringCRS).  This round-trips through pyproj to resolve the
+    CRS name back to a proper ProjectedCRS via the EPSG database.
+    """
+    from pyproj import CRS as _pCRS
+
+    pcrs = _pCRS(crs.to_wkt())
+    if pcrs.to_epsg() is not None:
+        return CRS.from_wkt(_pCRS.from_epsg(pcrs.to_epsg()).to_wkt())
+
+    # Broken WKT — look up by name in pyproj database
+    from pyproj.database import query_crs_info
+    from pyproj.enums import PJType
+
+    crs_name = pcrs.name
+    results = query_crs_info(
+        auth_name="EPSG", pj_types=[PJType.PROJECTED_CRS],
+    )
+    for r in results:
+        if r.name == crs_name:
+            return CRS.from_wkt(_pCRS.from_authority(r.auth_name, r.code).to_wkt())
+
+    return crs  # fallback: return as-is
+
+
 def preprocess_environment(
     study:   Study,
     sources: list[str] = None,
@@ -172,8 +200,9 @@ def _preprocess_terrain(study: Study) -> Path:
             continue
 
         with rasterio.open(src_path) as src:
+            src_crs = _resolve_crs(src.crs)
             transform, width, height = calculate_default_transform(
-                src.crs, dst_crs, src.width, src.height, *src.bounds
+                src_crs, dst_crs, src.width, src.height, *src.bounds
             )
             meta = src.meta.copy()
             meta.update({"crs": dst_crs, "transform": transform,
@@ -181,13 +210,18 @@ def _preprocess_terrain(study: Study) -> Path:
 
             with rasterio.open(dst_path, "w", **meta) as dst:
                 for band in range(1, src.count + 1):
+                    src_data = src.read(band)
+                    dst_data = np.empty((height, width), dtype=src_data.dtype)
                     reproject(
-                        source      = rasterio.band(src, band),
-                        destination = rasterio.band(dst, band),
-                        src_crs     = src.crs,
+                        source      = src_data,
+                        destination = dst_data,
+                        src_transform = src.transform,
+                        src_crs     = src_crs,
+                        dst_transform = transform,
                         dst_crs     = dst_crs,
                         resampling  = Resampling.bilinear,
                     )
+                    dst.write(dst_data, band)
         print(f"[preprocess] terrain/{name} → {dst_path}")
 
     return study.terrain_dir
@@ -213,8 +247,9 @@ def _preprocess_landcover(study: Study) -> Path:
         return study.landcover_dir
 
     with rasterio.open(src_path) as src:
+        src_crs = _resolve_crs(src.crs)
         transform, width, height = calculate_default_transform(
-            src.crs, dst_crs, src.width, src.height, *src.bounds
+            src_crs, dst_crs, src.width, src.height, *src.bounds
         )
         meta = src.meta.copy()
         meta.update({"crs": dst_crs, "transform": transform,
@@ -222,13 +257,18 @@ def _preprocess_landcover(study: Study) -> Path:
 
         with rasterio.open(dst_path, "w", **meta) as dst:
             for band in range(1, src.count + 1):
+                src_data = src.read(band)
+                dst_data = np.empty((height, width), dtype=src_data.dtype)
                 reproject(
-                    source      = rasterio.band(src, band),
-                    destination = rasterio.band(dst, band),
-                    src_crs     = src.crs,
+                    source      = src_data,
+                    destination = dst_data,
+                    src_transform = src.transform,
+                    src_crs     = src_crs,
+                    dst_transform = transform,
                     dst_crs     = dst_crs,
                     resampling  = Resampling.nearest,  # categorical data
                 )
+                dst.write(dst_data, band)
 
     print(f"[preprocess] landcover → {dst_path}")
     return study.landcover_dir
