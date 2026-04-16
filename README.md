@@ -229,4 +229,6 @@ scikit-learn, xgboost, xarray, netCDF4, pyarrow, requests, h5py, tqdm, cdsapi
 
 ## License
 
-This project was developed as part of ENGO 645 (Data Mining) coursework at the University of Calgary.
+This project is licensed under the [MIT License](LICENSE).
+
+Developed as part of ENGO 645 (Data Mining) coursework at the University of Calgary.
