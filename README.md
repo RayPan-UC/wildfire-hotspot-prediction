@@ -136,7 +136,7 @@ predictor = WildfirePredictor(models_dir=Path("path/to/models"))
 out_df = predictor.predict(feature_df, threshold=0.3)   # adds prob + pred cols
 ```
 
-This is the interface consumed by the [wildfire-decision-support](https://github.com) system for operational situational awareness.
+This is the interface consumed by the [wildfire-decision-support](https://github.com/RayPan-UC/wildfire-decision-support) system for operational situational awareness.
 
 ---
 
