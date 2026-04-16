@@ -34,7 +34,7 @@ Receptor cells are labelled using the T2 overpass observations. Cloud-obscured c
 
 ### Feature Engineering
 
-Over **40 features** spanning fire state, weather, terrain, fuel type, FWI indices, and path-based wind alignment:
+**29 features** spanning fire state, weather, terrain, fuel type, FWI indices, and path-based wind alignment (+ fuel type one-hot encoded into 22 dummies, totaling 50 columns):
 
 <p align="center">
   <img src="assets/features.png" width="700" alt="Feature overview">
