@@ -15,14 +15,38 @@
         <a href="fire_growth.html" id="growth-link" title="Fire growth chart">↗ Growth</a>
       </header>
 
-      <section class="control-group">
-        <label for="fold-select">Fold</label>
-        <select id="fold-select"></select>
+      <!-- Timeline / playback -->
+      <section class="control-group" id="timeline-group">
+        <div class="timeline-head">
+          <span id="pair-time">—</span>
+          <span id="fold-badge" class="badge">—</span>
+        </div>
+        <input type="range" id="pair-slider" min="0" max="0" value="0" step="1" />
+        <div class="timeline-meta">
+          <span id="pair-index">0 / 0</span>
+          <span id="pair-delta" class="muted">—</span>
+        </div>
+        <div class="playback">
+          <button id="btn-prev"  title="Previous">⏮</button>
+          <button id="btn-play"  title="Play / Pause">▶</button>
+          <button id="btn-next"  title="Next">⏭</button>
+          <select id="speed-select" title="Playback speed">
+            <option value="2000">0.5×</option>
+            <option value="1000" selected>1×</option>
+            <option value="500">2×</option>
+            <option value="250">4×</option>
+          </select>
+        </div>
       </section>
 
+      <!-- Model selector -->
       <section class="control-group">
-        <label for="pair-select">Pair (T1 → T2)</label>
-        <select id="pair-select"></select>
+        <label>Model</label>
+        <div class="model-tabs" role="radiogroup">
+          <label class="model-tab"><input type="radio" name="model" value="xgb" checked /><span>XGB</span></label>
+          <label class="model-tab"><input type="radio" name="model" value="rf"  /><span>RF</span></label>
+          <label class="model-tab"><input type="radio" name="model" value="lr"  /><span>LR</span></label>
+        </div>
       </section>
 
       <section class="layer-group">
@@ -37,7 +61,11 @@
         </label>
         <label class="layer-toggle">
           <input type="checkbox" id="layer-receptors" checked />
-          <span class="dot" style="background:#60a5fa"></span> Receptors
+          <span class="dot" style="background:#60a5fa"></span> Receptors (pred)
+        </label>
+        <label class="layer-toggle">
+          <input type="checkbox" id="layer-burned" checked />
+          <span class="fire-dot"></span> Actual burn (T2)
         </label>
         <label class="layer-toggle">
           <input type="checkbox" id="layer-sources" checked />
@@ -46,15 +74,18 @@
       </section>
 
       <section class="legend-group">
-        <h2>Label</h2>
-        <div class="legend-item">
-          <span class="dot" style="background:#ef4444"></span> Burned (T2)
+        <h2>Prediction ramp</h2>
+        <div class="prob-ramp">
+          <span class="prob-bar"></span>
+          <div class="prob-scale">
+            <span>0</span><span>0.5</span><span>1</span>
+          </div>
+        </div>
+        <div class="legend-item" style="margin-top:6px">
+          <span class="fire-dot"></span> Actual burned at T2
         </div>
         <div class="legend-item">
-          <span class="dot" style="background:#3b82f6"></span> Unburned
-        </div>
-        <div class="legend-item">
-          <span class="dot" style="background:#9ca3af"></span> Cloud
+          <span class="dot" style="background:#9ca3af"></span> Cloud (no label)
         </div>
       </section>
 

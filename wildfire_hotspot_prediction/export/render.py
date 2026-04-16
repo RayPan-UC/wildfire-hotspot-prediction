@@ -114,9 +114,14 @@ def _load_hotspot_data(proc_dir: Path) -> HotspotData:
 
 # ── Export functions ──────────────────────────────────────────────────────────
 
-def _export_meta(study: Study, pair_index: pd.DataFrame, n_folds: int, out_dir: Path):
+def _export_meta(study: Study, pair_index: pd.DataFrame, n_folds: int, out_dir: Path,
+                 fold_models: "dict | None" = None):
     lon_min, lat_min, lon_max, lat_max = study.bbox
     center = [(lon_min + lon_max) / 2, (lat_min + lat_max) / 2]
+    thresholds = {}
+    if fold_models:
+        for fold_k, data in fold_models.items():
+            thresholds[str(fold_k)] = data["thresholds"]
     _write_json(out_dir / "meta.json", {
         "study_name":  study.name,
         "bbox":        list(study.bbox),
@@ -126,6 +131,7 @@ def _export_meta(study: Study, pair_index: pd.DataFrame, n_folds: int, out_dir: 
         "n_folds":     n_folds,
         "n_pairs":     len(pair_index),
         "has_predictions": (study.predictions_dir / "pair_001").exists(),
+        "thresholds":  thresholds,
     })
     log.info("[export] meta.json")
 
@@ -153,6 +159,31 @@ def _export_boundaries(fire_state, out_dir: Path):
     log.info("[export] boundaries/ (%d files)", len(fire_state.boundary_after))
 
 
+def _load_fold_models(models_dir: Path, n_folds: int) -> dict:
+    """Load per-fold (xgb, rf, lr) models + thresholds.
+
+    Returns dict[fold_k → {'models': {name → model}, 'thresholds': {name → thr}}].
+    Missing files are silently skipped (predictions for that fold fall back to
+    label coloring in the UI).
+    """
+    import pickle
+    out = {}
+    for k in range(1, n_folds + 1):
+        thr_path = models_dir / f"model_fold_{k}_thresholds.json"
+        if not thr_path.exists():
+            continue
+        thresholds = json.loads(thr_path.read_text())
+        models = {}
+        for name in ("xgb", "rf", "lr"):
+            pkl = models_dir / f"model_fold_{k}_{name}.pkl"
+            if pkl.exists():
+                with open(pkl, "rb") as f:
+                    models[name] = pickle.load(f)
+        if models:
+            out[k] = {"models": models, "thresholds": thresholds}
+    return out
+
+
 def _export_pairs(
     pair_index:   pd.DataFrame,
     fire_state,
@@ -160,6 +191,7 @@ def _export_pairs(
     training_dir: Path,
     out_dir:      Path,
     sel_map:      "dict | None" = None,
+    fold_models:  "dict | None" = None,
 ):
     # Load all fold parquets → dict[pair_id → df]
     pair_dfs: dict[str, pd.DataFrame] = {}
@@ -170,6 +202,9 @@ def _export_pairs(
                 df = pd.read_parquet(p)
                 for pid, grp in df.groupby("pair_id"):
                     pair_dfs[pid] = grp
+
+    # Feature matrix helper from train module (handles fuel one-hot + NaN fill)
+    from wildfire_hotspot_prediction.model.train import _prepare_X as _train_prepare_X
 
     pairs_dir = out_dir / "pairs"
 
@@ -192,38 +227,55 @@ def _export_pairs(
             )
             label_counts = df["label"].value_counts().to_dict()
 
+            # Per-model predicted probability (None if fold's models unavailable)
+            probs = {"xgb": None, "rf": None, "lr": None}
+            if fold_models and fold is not None and fold in fold_models:
+                fm = fold_models[fold]["models"]
+                X  = _train_prepare_X(df.copy())
+                for name, mdl in fm.items():
+                    try:
+                        probs[name] = mdl.predict_proba(X)[:, 1]
+                    except Exception as e:
+                        log.warning("[export] %s predict failed on pair %s: %s",
+                                    name, pid, e)
+
             for i in range(len(df)):
                 r = df.iloc[i]
+                props = {
+                    # label
+                    "label":               int(r["label"]),
+                    # distance
+                    "dist_to_fire_front":  _safe_float(r.get("dist_to_fire_front")),
+                    # weather
+                    "wind_speed":          _safe_float(r.get("wind_speed")),
+                    "temp_c":              _safe_float(r.get("temp_c")),
+                    "rh":                  _safe_float(r.get("rh")),
+                    # FWI
+                    "ros":                 _safe_float(r.get("ros")),
+                    "ffmc":                _safe_float(r.get("ffmc")),
+                    "isi":                 _safe_float(r.get("isi")),
+                    # static
+                    "slope":               _safe_float(r.get("slope")),
+                    "aspect":              _safe_float(r.get("aspect")),
+                    "fuel_type":           int(r["fuel_type"]) if pd.notna(r.get("fuel_type")) else None,
+                    # path (A→B)
+                    "wind_alignment_mean": _safe_float(r.get("wind_alignment_mean")),
+                    "wind_alignment_max":  _safe_float(r.get("wind_alignment_max")),
+                    "wind_speed_mean":     _safe_float(r.get("wind_speed_mean")),
+                    "grade":               _safe_float(r.get("grade")),
+                    "slope_mean":          _safe_float(r.get("slope_mean")),
+                }
+                # Per-model predicted probability
+                for name, arr in probs.items():
+                    if arr is not None:
+                        props[f"prob_{name}"] = _safe_float(arr[i])
                 features.append({
                     "type": "Feature",
                     "geometry": {
                         "type": "Point",
                         "coordinates": [float(lons[i]), float(lats[i])],
                     },
-                    "properties": {
-                        # label
-                        "label":               int(r["label"]),
-                        # distance
-                        "dist_to_fire_front":  _safe_float(r.get("dist_to_fire_front")),
-                        # weather
-                        "wind_speed":          _safe_float(r.get("wind_speed")),
-                        "temp_c":              _safe_float(r.get("temp_c")),
-                        "rh":                  _safe_float(r.get("rh")),
-                        # FWI
-                        "ros":                 _safe_float(r.get("ros")),
-                        "ffmc":                _safe_float(r.get("ffmc")),
-                        "isi":                 _safe_float(r.get("isi")),
-                        # static
-                        "slope":               _safe_float(r.get("slope")),
-                        "aspect":              _safe_float(r.get("aspect")),
-                        "fuel_type":           int(r["fuel_type"]) if pd.notna(r.get("fuel_type")) else None,
-                        # path (A→B)
-                        "wind_alignment_mean": _safe_float(r.get("wind_alignment_mean")),
-                        "wind_alignment_max":  _safe_float(r.get("wind_alignment_max")),
-                        "wind_speed_mean":     _safe_float(r.get("wind_speed_mean")),
-                        "grade":               _safe_float(r.get("grade")),
-                        "slope_mean":          _safe_float(r.get("slope_mean")),
-                    },
+                    "properties": props,
                 })
             _write_geojson(pair_dir / "receptors.geojson", features)
         else:
@@ -382,12 +434,23 @@ def export_render(study: Study, n_folds: int = 3, port: int = 8765) -> None:
     else:
         sel_map = None   # _export_pairs will recompute per-pair
 
+    # Fold models (for per-receptor predicted probability). Missing → UI
+    # falls back to label coloring.
+    fold_models = _load_fold_models(study.models_dir, n_folds)
+    if fold_models:
+        have = sorted(fold_models.keys())
+        names = sorted({n for k in have for n in fold_models[k]["models"]})
+        print(f"[export] fold models loaded for folds {have} "
+              f"(models: {','.join(names)})")
+    else:
+        print("[export] no fold models found — predictions will be omitted")
+
     # ── Export ────────────────────────────────────────────────────────────────
-    _export_meta(study, pair_index, n_folds, out_dir)
+    _export_meta(study, pair_index, n_folds, out_dir, fold_models=fold_models)
     _export_fire_growth(fire_state, out_dir)
     _export_boundaries(fire_state, out_dir)
     _export_pairs(pair_index, fire_state, era5, study.training_dir, out_dir,
-                  sel_map=sel_map)
+                  sel_map=sel_map, fold_models=fold_models)
 
     print(f"[export] data_render/ → {out_dir}")
 
